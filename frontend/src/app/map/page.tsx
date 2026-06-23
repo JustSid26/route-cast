@@ -1,14 +1,14 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, apiError } from '@/lib/api';
 import { formatDistance, formatDuration } from '@/lib/format';
 import { PageHeader, Spinner, ErrorState, EmptyState } from '@/components/ui';
 import { SavingsPanel } from '@/components/SavingsPanel';
-import { buildRouteCsv, downloadCsv } from '@/lib/export';
+import { buildRouteCsv, downloadCsv, buildVehiclePdf, buildVehicleXlsx } from '@/lib/export';
 
 // Leaflet touches `window`; load the map only on the client.
 const RouteMap = dynamic(() => import('@/components/RouteMap'), {
@@ -22,6 +22,10 @@ function MapView() {
 
   const jobs = useQuery({ queryKey: ['routes'], queryFn: api.listRoutes });
   const depots = useQuery({ queryKey: ['depots'], queryFn: api.listDepots });
+  const deliveries = useQuery({ queryKey: ['deliveries'], queryFn: api.listDeliveries });
+
+  // delivery_id → address, for per-driver route sheets (stops carry no address).
+  const addrById = new Map((deliveries.data ?? []).map((d) => [d.id, d.address] as const));
 
   const [jobId, setJobId] = useState<string>('');
   useEffect(() => {
@@ -47,6 +51,22 @@ function MapView() {
     ? detail.data.job.analysis.baseline
     : undefined;
 
+  // Upload the manager's actual "usual route" CSV as the comparison baseline.
+  const usualFileRef = useRef<HTMLInputElement>(null);
+  const uploadUsual = useMutation({
+    mutationFn: (csv: string) => api.uploadBaseline(jobId, csv),
+    onSuccess: () => {
+      detail.refetch();
+      setShowUsual(true);
+    },
+  });
+
+  async function onUsualFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // let the same file be re-picked after an error
+    if (file) uploadUsual.mutate(await file.text());
+  }
+
   function exportCsv() {
     if (!detail.data) return;
     downloadCsv(`route-${detail.data.job.id.slice(0, 8)}.csv`, buildRouteCsv(detail.data, depot));
@@ -60,7 +80,23 @@ function MapView() {
         action={
           <div className="flex items-center gap-2">
             {detail.data && (
-              <button className="btn-secondary" onClick={exportCsv}>Export CSV</button>
+              <>
+                <input
+                  ref={usualFileRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={onUsualFile}
+                />
+                <button
+                  className="btn-secondary"
+                  onClick={() => usualFileRef.current?.click()}
+                  disabled={uploadUsual.isPending}
+                >
+                  {uploadUsual.isPending ? 'Uploading…' : 'Upload usual route'}
+                </button>
+                <button className="btn-secondary" onClick={exportCsv}>Export CSV</button>
+              </>
             )}
             <select className="input max-w-xs" value={jobId} onChange={(e) => setJobId(e.target.value)}>
               <option value="">Select a route job…</option>
@@ -78,6 +114,9 @@ function MapView() {
         <EmptyState title="No routes to display" hint="Run an optimization first." />
       )}
       {detail.error && <ErrorState message={apiError(detail.error)} />}
+      {uploadUsual.error && (
+        <div className="mb-3"><ErrorState message={apiError(uploadUsual.error)} /></div>
+      )}
 
       {jobId && detail.data && (
         <div className="space-y-6">
@@ -122,6 +161,11 @@ function MapView() {
                   <div className="flex justify-between"><dt>Time</dt><dd>{formatDuration(r.total_time)}</dd></div>
                   <div className="flex justify-between"><dt>Utilization</dt><dd>{r.utilization_pct}%</dd></div>
                 </dl>
+                <div className="mt-3 flex gap-3 border-t border-slate-100 pt-2 text-xs">
+                  <span className="text-slate-400">Driver sheet</span>
+                  <button className="text-brand-600 hover:underline" onClick={() => buildVehiclePdf(r, depot, addrById)}>PDF</button>
+                  <button className="text-brand-600 hover:underline" onClick={() => buildVehicleXlsx(r, depot, addrById)}>Excel</button>
+                </div>
               </div>
             ))}
           </div>
