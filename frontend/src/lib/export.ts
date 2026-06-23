@@ -13,25 +13,28 @@ function csvCell(value: string | number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-export function buildRouteCsv(detail: RouteJobDetail, depot: Depot | null): string {
+export function buildRouteCsv(detail: RouteJobDetail, depots: Depot[]): string {
   const header = [
-    'vehicle', 'sequence', 'type', 'location', 'latitude', 'longitude',
+    'vehicle', 'depot', 'sequence', 'type', 'location', 'latitude', 'longitude',
     'weight_kg', 'vehicle_total_km', 'vehicle_total_min', 'utilization_pct',
   ];
   const rows: (string | number)[][] = [header];
+  const depotById = new Map(depots.map((d) => [d.id, d]));
 
   for (const r of detail.results) {
     const totalKm = (r.total_distance / 1000).toFixed(2);
     const totalMin = Math.round(r.total_time / 60);
+    // Each vehicle departs from / returns to its own home depot (multi-depot).
+    const depot = (r.depot_id ? depotById.get(r.depot_id) : null) ?? depots[0] ?? null;
     const depName = depot?.name ?? 'Depot';
     const depLat = depot?.latitude ?? '';
     const depLng = depot?.longitude ?? '';
 
-    rows.push([r.vehicle_name, 0, 'Depart depot', depName, depLat, depLng, '', totalKm, totalMin, r.utilization_pct]);
+    rows.push([r.vehicle_name, depName, 0, 'Depart depot', depName, depLat, depLng, '', totalKm, totalMin, r.utilization_pct]);
     for (const s of r.stop_sequence) {
-      rows.push([r.vehicle_name, s.sequence, 'Delivery', s.customer_name, s.latitude, s.longitude, s.weight, totalKm, totalMin, r.utilization_pct]);
+      rows.push([r.vehicle_name, depName, s.sequence, 'Delivery', s.customer_name, s.latitude, s.longitude, s.weight, totalKm, totalMin, r.utilization_pct]);
     }
-    rows.push([r.vehicle_name, r.stop_sequence.length + 1, 'Return depot', depName, depLat, depLng, '', totalKm, totalMin, r.utilization_pct]);
+    rows.push([r.vehicle_name, depName, r.stop_sequence.length + 1, 'Return depot', depName, depLat, depLng, '', totalKm, totalMin, r.utilization_pct]);
   }
 
   return rows.map((row) => row.map(csvCell).join(',')).join('\n');

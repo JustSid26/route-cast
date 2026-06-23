@@ -17,14 +17,26 @@ function dot(color: string, label: string) {
   });
 }
 
-const depotIcon = L.divIcon({
-  className: '',
-  html: `<div style="background:#0f172a;width:28px;height:28px;border-radius:6px;
-    display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;
-    font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)">H</div>`,
-  iconSize: [28, 28],
-  iconAnchor: [14, 14],
-});
+// Depot marker: dark rounded square. Label is a short initials badge so multiple
+// depots on one map stay distinguishable; full name shown in the popup.
+function depotMarker(label: string) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:#0f172a;min-width:28px;height:28px;padding:0 5px;border-radius:6px;
+      display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;
+      font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)">${label}</div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+
+/** Short, readable badge for a depot name (first two word-initials, else 'H'). */
+function depotInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'H';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
 
 function FitBounds({ points }: { points: [number, number][] }) {
   const map = useMap();
@@ -37,20 +49,20 @@ function FitBounds({ points }: { points: [number, number][] }) {
 }
 
 export default function RouteMap({
-  depot,
+  depots,
   results,
   baselineGeometry,
 }: {
-  depot: Depot | null;
+  depots: Depot[]; // every depot in play (multi-depot jobs span several)
   results: RouteResult[];
   baselineGeometry?: [number, number][]; // usual route overlay (dashed)
 }) {
-  const center: [number, number] = depot
-    ? [depot.latitude, depot.longitude]
+  const center: [number, number] = depots[0]
+    ? [depots[0].latitude, depots[0].longitude]
     : [12.9716, 77.5946];
 
   const allPoints: [number, number][] = [
-    ...(depot ? [[depot.latitude, depot.longitude] as [number, number]] : []),
+    ...depots.map((d) => [d.latitude, d.longitude] as [number, number]),
     ...results.flatMap((r) => r.geometry),
   ];
 
@@ -94,11 +106,11 @@ export default function RouteMap({
         ))
       )}
 
-      {depot && (
-        <Marker position={[depot.latitude, depot.longitude]} icon={depotIcon}>
-          <Popup><strong>{depot.name}</strong><br />Depot</Popup>
+      {depots.map((d) => (
+        <Marker key={d.id} position={[d.latitude, d.longitude]} icon={depotMarker(depotInitials(d.name))}>
+          <Popup><strong>{d.name}</strong><br />Depot</Popup>
         </Marker>
-      )}
+      ))}
     </MapContainer>
   );
 }

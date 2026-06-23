@@ -42,9 +42,21 @@ function MapView() {
     enabled: Boolean(jobId),
   });
 
-  const depot = detail.data?.job.depot_id
-    ? depots.data?.find((d) => d.id === detail.data!.job.depot_id) ?? null
-    : null;
+  const depotById = new Map((depots.data ?? []).map((d) => [d.id, d] as const));
+  // Depot a given route departs from (its own home depot), falling back to the
+  // job's primary depot for older single-depot jobs.
+  const jobDepot = detail.data?.job.depot_id ? depotById.get(detail.data.job.depot_id) ?? null : null;
+  const depotFor = (r: { depot_id: string | null }) =>
+    (r.depot_id ? depotById.get(r.depot_id) : null) ?? jobDepot;
+  // Distinct depots actually used by this job's routes (for the map markers).
+  const depotsInPlay = Array.from(
+    new Map(
+      (detail.data?.results ?? [])
+        .map((r) => depotFor(r))
+        .filter((d): d is NonNullable<typeof d> => !!d)
+        .map((d) => [d.id, d] as const)
+    ).values()
+  );
 
   const [showUsual, setShowUsual] = useState(false);
   const baseline = detail.data?.job.analysis && 'baseline' in detail.data.job.analysis
@@ -69,7 +81,7 @@ function MapView() {
 
   function exportCsv() {
     if (!detail.data) return;
-    downloadCsv(`route-${detail.data.job.id.slice(0, 8)}.csv`, buildRouteCsv(detail.data, depot));
+    downloadCsv(`route-${detail.data.job.id.slice(0, 8)}.csv`, buildRouteCsv(detail.data, depots.data ?? []));
   }
 
   return (
@@ -141,7 +153,7 @@ function MapView() {
             )}
             <div className="card overflow-hidden p-0">
               <RouteMap
-                depot={depot}
+                depots={depotsInPlay}
                 results={detail.data.results}
                 baselineGeometry={showUsual ? baseline?.geometry : undefined}
               />
@@ -156,6 +168,7 @@ function MapView() {
                   <span className="text-sm font-semibold text-slate-800">{r.vehicle_name}</span>
                 </div>
                 <dl className="space-y-1 text-xs text-slate-500">
+                  <div className="flex justify-between"><dt>Starts from</dt><dd className="font-medium text-slate-600">{depotFor(r)?.name ?? 'Depot'}</dd></div>
                   <div className="flex justify-between"><dt>Stops</dt><dd>{r.stop_sequence.length}</dd></div>
                   <div className="flex justify-between"><dt>Distance</dt><dd>{formatDistance(r.total_distance)}</dd></div>
                   <div className="flex justify-between"><dt>Time</dt><dd>{formatDuration(r.total_time)}</dd></div>
@@ -163,8 +176,8 @@ function MapView() {
                 </dl>
                 <div className="mt-3 flex gap-3 border-t border-slate-100 pt-2 text-xs">
                   <span className="text-slate-400">Driver sheet</span>
-                  <button className="text-brand-600 hover:underline" onClick={() => buildVehiclePdf(r, depot, addrById)}>PDF</button>
-                  <button className="text-brand-600 hover:underline" onClick={() => buildVehicleXlsx(r, depot, addrById)}>Excel</button>
+                  <button className="text-brand-600 hover:underline" onClick={() => buildVehiclePdf(r, depotFor(r), addrById)}>PDF</button>
+                  <button className="text-brand-600 hover:underline" onClick={() => buildVehicleXlsx(r, depotFor(r), addrById)}>Excel</button>
                 </div>
               </div>
             ))}

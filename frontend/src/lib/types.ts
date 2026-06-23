@@ -90,6 +90,7 @@ export interface RouteResult {
   job_id: string;
   vehicle_id: string | null;
   vehicle_name: string;
+  depot_id: string | null; // home depot this vehicle departs from (multi-depot)
   color: string;
   stop_sequence: DeliveryStop[];
   geometry: [number, number][];
@@ -137,9 +138,13 @@ export interface GeoResult {
 export type DepotInput = Omit<Depot, 'id' | 'created_at' | 'updated_at'>;
 export type VehicleInput = Omit<Vehicle, 'id' | 'created_at' | 'updated_at'>;
 export type DeliveryInput = Omit<Delivery, 'id' | 'created_at' | 'updated_at'>;
-export interface OptimizeInput {
+export interface VehicleDepotAssignment {
+  vehicle_id: string;
   depot_id: string;
+}
+export interface OptimizeInput {
   objective: Objective;
-  vehicle_ids?: string[];
+  // Multi-depot: which vehicle departs from which depot.
+  assignments: VehicleDepotAssignment[];
   delivery_ids?: string[];
 }
