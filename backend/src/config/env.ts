@@ -6,7 +6,9 @@ function num(value: string | undefined, fallback: number): number {
 }
 
 export const env = {
-  port: num(process.env.BACKEND_PORT, 4000),
+  // Railway (and most PaaS) inject PORT at runtime and expect us to bind it.
+  // Fall back to BACKEND_PORT (Compose) and finally 4000 for local dev.
+  port: num(process.env.PORT ?? process.env.BACKEND_PORT, 4000),
   databaseUrl:
     process.env.DATABASE_URL ??
     'postgresql://vrp:vrp_password@localhost:5432/vrp',
