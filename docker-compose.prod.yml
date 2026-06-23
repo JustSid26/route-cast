@@ -1,0 +1,44 @@
+# Production overlay for a single host (e.g. a DigitalOcean Droplet).
+#
+# Adds a Caddy reverse proxy (HTTPS via Let's Encrypt) in front of the app and
+# sets restart policies so everything comes back after a reboot. Use it on top
+# of the base compose file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Caddy reaches `frontend` and `backend` by service name over the compose
+# network, so you can firewall the host down to ports 80/443 only — the 3000/4000
+# bindings from the base file are only needed if you want to hit them directly.
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+
+  frontend:
+    restart: unless-stopped
+
+  backend:
+    restart: unless-stopped
+
+  optimization-service:
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
