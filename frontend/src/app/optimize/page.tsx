@@ -9,6 +9,7 @@ import { formatDistance, formatDuration, formatWeight } from '@/lib/format';
 import { deliveriesForHub } from '@/lib/geo';
 import { PageHeader, Spinner, ErrorState } from '@/components/ui';
 import { SavingsPanel } from '@/components/SavingsPanel';
+import { buildRouteCsv, downloadCsv } from '@/lib/export';
 
 export default function OptimizePage() {
   const depots = useQuery({ queryKey: ['depots'], queryFn: api.listDepots });
@@ -160,7 +161,18 @@ export default function OptimizePage() {
                 <span><span className="text-slate-400">Stops</span> <b>{result.job.stop_count}</b></span>
                 <span><span className="text-slate-400">Distance</span> <b>{formatDistance(result.job.total_distance)}</b></span>
                 <span><span className="text-slate-400">Time</span> <b>{formatDuration(result.job.total_time)}</b></span>
-                <Link href={`/map?job=${result.job.id}`} className="ml-auto text-brand-600 hover:underline">
+                <button
+                  className="ml-auto text-brand-600 hover:underline"
+                  onClick={() =>
+                    downloadCsv(
+                      `route-${result.job.id.slice(0, 8)}.csv`,
+                      buildRouteCsv(result, depots.data?.find((d) => d.id === result.job.depot_id) ?? null)
+                    )
+                  }
+                >
+                  Export CSV
+                </button>
+                <Link href={`/map?job=${result.job.id}`} className="text-brand-600 hover:underline">
                   View on map →
                 </Link>
               </div>

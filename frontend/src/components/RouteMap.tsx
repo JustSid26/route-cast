@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Fragment, useEffect } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Depot, RouteResult } from '@/lib/types';
@@ -39,9 +39,11 @@ function FitBounds({ points }: { points: [number, number][] }) {
 export default function RouteMap({
   depot,
   results,
+  baselineGeometry,
 }: {
   depot: Depot | null;
   results: RouteResult[];
+  baselineGeometry?: [number, number][]; // usual route overlay (dashed)
 }) {
   const center: [number, number] = depot
     ? [depot.latitude, depot.longitude]
@@ -60,8 +62,24 @@ export default function RouteMap({
       />
       <FitBounds points={allPoints} />
 
+      {/* Usual route overlay — dark dashed with a light casing, drawn beneath. */}
+      {baselineGeometry && baselineGeometry.length > 1 && (
+        <>
+          <Polyline positions={baselineGeometry} pathOptions={{ color: '#ffffff', weight: 6, opacity: 0.8 }} />
+          <Polyline
+            positions={baselineGeometry}
+            pathOptions={{ color: '#1e293b', weight: 3, opacity: 0.95, dashArray: '4 9' }}
+          />
+        </>
+      )}
+
+      {/* Each optimized route: white casing underneath + bold colour on top, so
+          it stays legible over parks, water, roads — any basemap feature. */}
       {results.map((r) => (
-        <Polyline key={r.id} positions={r.geometry} pathOptions={{ color: r.color, weight: 4, opacity: 0.85 }} />
+        <Fragment key={r.id}>
+          <Polyline positions={r.geometry} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }} />
+          <Polyline positions={r.geometry} pathOptions={{ color: r.color, weight: 4.5, opacity: 1 }} />
+        </Fragment>
       ))}
 
       {results.flatMap((r) =>

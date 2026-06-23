@@ -44,12 +44,21 @@ export interface ScenarioMetric {
   time: number;
 }
 
+export interface BaselineRoute {
+  source: 'mock' | 'uploaded';
+  stop_sequence: DeliveryStop[];
+  geometry: [number, number][];
+  total_distance: number;
+  total_time: number;
+}
+
 export interface RouteAnalysis {
   stops: number;
   optimized: ScenarioMetric;
   usual: ScenarioMetric;
   average: ScenarioMetric;
   worst: ScenarioMetric;
+  baseline?: BaselineRoute;
 }
 
 export interface RouteJob {

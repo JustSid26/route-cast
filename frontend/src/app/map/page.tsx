@@ -8,6 +8,7 @@ import { api, apiError } from '@/lib/api';
 import { formatDistance, formatDuration } from '@/lib/format';
 import { PageHeader, Spinner, ErrorState, EmptyState } from '@/components/ui';
 import { SavingsPanel } from '@/components/SavingsPanel';
+import { buildRouteCsv, downloadCsv } from '@/lib/export';
 
 // Leaflet touches `window`; load the map only on the client.
 const RouteMap = dynamic(() => import('@/components/RouteMap'), {
@@ -41,20 +42,35 @@ function MapView() {
     ? depots.data?.find((d) => d.id === detail.data!.job.depot_id) ?? null
     : null;
 
+  const [showUsual, setShowUsual] = useState(false);
+  const baseline = detail.data?.job.analysis && 'baseline' in detail.data.job.analysis
+    ? detail.data.job.analysis.baseline
+    : undefined;
+
+  function exportCsv() {
+    if (!detail.data) return;
+    downloadCsv(`route-${detail.data.job.id.slice(0, 8)}.csv`, buildRouteCsv(detail.data, depot));
+  }
+
   return (
     <div>
       <PageHeader
         title="Route Map"
         subtitle="Visualize optimized vehicle routes"
         action={
-          <select className="input max-w-xs" value={jobId} onChange={(e) => setJobId(e.target.value)}>
-            <option value="">Select a route job…</option>
-            {jobs.data?.filter((j) => j.status === 'completed').map((j) => (
-              <option key={j.id} value={j.id}>
-                {j.id.slice(0, 8)} · {j.vehicle_count} vehicles · {formatDistance(j.total_distance)}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            {detail.data && (
+              <button className="btn-secondary" onClick={exportCsv}>Export CSV</button>
+            )}
+            <select className="input max-w-xs" value={jobId} onChange={(e) => setJobId(e.target.value)}>
+              <option value="">Select a route job…</option>
+              {jobs.data?.filter((j) => j.status === 'completed').map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.id.slice(0, 8)} · {j.vehicle_count} vehicles · {formatDistance(j.total_distance)}
+                </option>
+              ))}
+            </select>
+          </div>
         }
       />
 
@@ -67,8 +83,29 @@ function MapView() {
         <div className="space-y-6">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
           <div className="lg:col-span-3">
+            {baseline && (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm">
+                <label className="flex items-center gap-2 font-medium text-slate-700">
+                  <input type="checkbox" checked={showUsual} onChange={(e) => setShowUsual(e.target.checked)} />
+                  Compare with usual route
+                </label>
+                <div className="flex items-center gap-4 text-xs text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-1 w-5 rounded" style={{ background: '#e11d48' }} /> Optimized (solid)
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-0 w-5 border-t-2 border-dashed border-slate-700" /> Usual
+                    {baseline.source === 'mock' && <span className="text-slate-400">(estimated)</span>}
+                  </span>
+                </div>
+              </div>
+            )}
             <div className="card overflow-hidden p-0">
-              <RouteMap depot={depot} results={detail.data.results} />
+              <RouteMap
+                depot={depot}
+                results={detail.data.results}
+                baselineGeometry={showUsual ? baseline?.geometry : undefined}
+              />
             </div>
           </div>
           <div className="space-y-3">
