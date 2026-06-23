@@ -1,8 +1,7 @@
 # Stuff to pick up
 
-A couple of things that are ready to go — grab whichever one you fancy. Both are
-pretty self-contained. Branch off main, open a PR when you're ready, let CI run,
-and I'll review.
+So only need to do this for today, these tasks moreover support our proof of route optimsation. We gotta show this demo tmr with all the functionalities. Routing optimisation is fine but these are gonna help in proving the time we have saved and all. Create a mock data spreadsheet
+to try it.
 
 ---
 
