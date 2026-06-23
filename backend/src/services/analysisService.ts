@@ -24,8 +24,8 @@ export function routeCost(
   return { distance: d, time: t };
 }
 
-function shuffled(n: number): number[] {
-  const a = Array.from({ length: n }, (_, i) => i + 1); // [1..n]
+function shuffled(indices: number[]): number[] {
+  const a = [...indices];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
@@ -34,24 +34,28 @@ function shuffled(n: number): number[] {
 }
 
 /**
- * Compute the baseline scenarios for a matrix where index 0 is the depot and
- * 1..n are the (selected) stops in entered order.
+ * Compute the baseline scenarios for the matrix. Index 0 is treated as the
+ * reference depot; `deliveryIndices` are the matrix rows for the selected stops
+ * (defaults to 1..n for the single-depot layout). The baseline is "one vehicle
+ * from the main depot, unplanned" — the same reference across single/multi-depot
+ * jobs, so savings stay comparable.
  */
 export function computeBaselines(
   distance: number[][],
   time: number[][],
-  optimized: ScenarioMetric
+  optimized: ScenarioMetric,
+  deliveryIndices?: number[]
 ): RouteAnalysis {
-  const n = distance.length - 1;
-  const enteredOrder = Array.from({ length: n }, (_, i) => i + 1);
+  const stops = deliveryIndices ?? Array.from({ length: distance.length - 1 }, (_, i) => i + 1);
+  const n = stops.length;
 
   // Usual: stops in the order they were provided.
-  const usual = routeCost(enteredOrder, distance, time);
+  const usual = routeCost(stops, distance, time);
 
   // Worst: a separate depot→stop→depot trip per stop.
   let worstD = 0;
   let worstT = 0;
-  for (let i = 1; i <= n; i++) {
+  for (const i of stops) {
     worstD += distance[0][i] + distance[i][0];
     worstT += time[0][i] + time[i][0];
   }
@@ -61,7 +65,7 @@ export function computeBaselines(
   let sumD = 0;
   let sumT = 0;
   for (let k = 0; k < SAMPLES; k++) {
-    const m = routeCost(shuffled(n), distance, time);
+    const m = routeCost(shuffled(stops), distance, time);
     sumD += m.distance;
     sumT += m.time;
   }

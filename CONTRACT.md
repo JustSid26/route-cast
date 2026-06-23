@@ -59,11 +59,12 @@ to it.
 
 ### RouteResult (one per vehicle used in a job)
 ```
-{ id, job_id, vehicle_id, vehicle_name, color,
+{ id, job_id, vehicle_id, vehicle_name, depot_id, color,
   stop_sequence: DeliveryStop[],   // ordered, excludes depot
   geometry: [lat, lng][],          // full polyline incl. depot endpoints
   total_distance, total_time, load_kg, utilization_pct }
 ```
+- `depot_id`: the home depot this vehicle departs from (multi-depot jobs span several).
 - `DeliveryStop`: `{ delivery_id, customer_name, latitude, longitude, weight, sequence }`
 
 ## REST API (backend, base `/api`)
@@ -100,10 +101,21 @@ OpenRouteService (Pelias) geocoder. Requires `ORS_API_KEY`; returns 400 if unset
 
 `OptimizeInput`:
 ```
-{ depot_id, objective?: "distance"|"time",
-  vehicle_ids?: string[],     // default: all active vehicles
-  delivery_ids?: string[] }   // default: all deliveries
+{ objective?: "distance"|"time",
+  // Multi-depot: which vehicle departs from which depot. Distinct depot_ids
+  // here define the set of depots in play; the first is the job's primary depot.
+  assignments?: { vehicle_id, depot_id }[],
+  delivery_ids?: string[],    // default: all deliveries
+
+  // Legacy single-depot form (still accepted). Expanded server-side to
+  // assignments = all (chosen/active) vehicles departing depot_id.
+  depot_id?: string,
+  vehicle_ids?: string[] }    // default: all active vehicles
 ```
+Provide either `assignments[]` or `depot_id`. Priority: when delivery `priority`
+values differ they are honoured (1=low…5=high); when they are all equal the
+solver derives importance from `weight`, so the heaviest unit is served first.
+Both only affect *which* stops drop if capacity is exceeded — never the routing.
 
 `POST /routes/:id/baseline` — upload the manager's actual "usual route" for a
 completed job as a CSV of stops in driving order. Header must include `sequence`

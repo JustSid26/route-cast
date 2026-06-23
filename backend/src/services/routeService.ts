@@ -8,7 +8,7 @@ import { solve } from './optimizationService';
 import { computeBaselines, routeCost } from './analysisService';
 import { parseUsualRoute } from './csvService';
 import { AppError } from '../utils/AppError';
-import { DeliveryStop, RouteAnalysis, RouteResult, Vehicle } from '../types';
+import { Delivery, DeliveryStop, Depot, RouteAnalysis, RouteResult, Vehicle } from '../types';
 import { OptimizeInput } from '../validation/schemas';
 
 // Route colours chosen to contrast OpenStreetMap basemaps — warm reds, oranges,
@@ -18,6 +18,39 @@ const PALETTE = [
   '#e11d48', '#9333ea', '#ea580c', '#db2777', '#c026d3',
   '#7c3aed', '#b91c1c', '#a21caf', '#be185d', '#9f1239',
 ];
+
+/**
+ * Per-node drop penalties encoding delivery priority. When capacity forces a
+ * delivery to be dropped, the solver drops the *lowest-penalty* node first.
+ *  - If the user set differing priorities (1..5), use them directly.
+ *  - If priorities are all equal (i.e. unspecified), derive importance from
+ *    weight so the heaviest unit is served first ("logically highest priority").
+ * The base penalty exceeds the total matrix cost, so dropping is always a last
+ * resort — priority only decides *which* node drops, never trades a stop for a
+ * shorter detour. `depotCount` leading zeros align the array to the node layout.
+ */
+function priorityPenalties(deliveries: Delivery[], cost: number[][], depotCount: number): number[] {
+  const total = cost.reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
+  const base = total + 1;
+
+  const priorities = deliveries.map((d) => d.priority ?? 3);
+  const userSetPriorities = new Set(priorities).size > 1;
+
+  let importance: number[];
+  if (userSetPriorities) {
+    importance = priorities; // explicit 1..5
+  } else {
+    const maxW = Math.max(0, ...deliveries.map((d) => d.weight ?? 0));
+    importance = maxW > 0
+      ? deliveries.map((d) => 1 + (d.weight ?? 0) / maxW) // lightest≈1 … heaviest≈2
+      : deliveries.map(() => 1);
+  }
+
+  return [
+    ...Array(depotCount).fill(0),
+    ...importance.map((im) => Math.round(base * im)),
+  ];
+}
 
 export const routeService = {
   listJobs: () => routeRepository.listJobs(),
@@ -99,16 +132,45 @@ export const routeService = {
    * tables make it straightforward to move to async/queued execution later.
    */
   optimize: async (input: OptimizeInput) => {
-    const depot = await depotRepository.findById(input.depot_id);
-    if (!depot) throw AppError.badRequest('depot_id does not reference an existing depot');
+    // Normalise input to per-vehicle assignments [{ vehicle_id, depot_id }].
+    // New clients send `assignments`; legacy single-depot clients send
+    // `depot_id` (+ optional `vehicle_ids`), which we expand to all-from-one-depot.
+    let rawAssignments: { vehicle_id: string; depot_id: string }[];
+    if (input.assignments && input.assignments.length > 0) {
+      rawAssignments = input.assignments;
+    } else {
+      const depotId = input.depot_id!;
+      const legacyVehicles = input.vehicle_ids?.length
+        ? await vehicleRepository.findByIds(input.vehicle_ids)
+        : await vehicleRepository.findActive();
+      rawAssignments = legacyVehicles
+        .filter((v) => v.active)
+        .map((v) => ({ vehicle_id: v.id, depot_id: depotId }));
+    }
+    if (rawAssignments.length === 0) {
+      throw AppError.badRequest('No vehicles assigned to a depot for optimisation');
+    }
 
-    const vehicles: Vehicle[] = input.vehicle_ids?.length
-      ? await vehicleRepository.findByIds(input.vehicle_ids)
-      : await vehicleRepository.findActive();
-    const activeVehicles = vehicles.filter((v) => v.active);
-    if (activeVehicles.length === 0) {
+    // Resolve vehicles (active only), preserving assignment order.
+    const vehicleRows = await vehicleRepository.findByIds(rawAssignments.map((a) => a.vehicle_id));
+    const vehicleById = new Map(vehicleRows.map((v) => [v.id, v]));
+    const assignments = rawAssignments
+      .map((a) => ({ depot_id: a.depot_id, vehicle: vehicleById.get(a.vehicle_id) }))
+      .filter((a): a is { depot_id: string; vehicle: Vehicle } => !!a.vehicle && a.vehicle.active);
+    if (assignments.length === 0) {
       throw AppError.badRequest('No active vehicles available for optimisation');
     }
+
+    // Distinct depots in play, in first-seen order → matrix node indices 0..D-1.
+    const depotIds = [...new Set(assignments.map((a) => a.depot_id))];
+    const depotRows = await depotRepository.findByIds(depotIds);
+    const depotById = new Map(depotRows.map((d) => [d.id, d]));
+    const depots = depotIds.map((id) => depotById.get(id)).filter((d): d is Depot => !!d);
+    if (depots.length !== depotIds.length) {
+      throw AppError.badRequest('One or more depot_ids do not reference an existing depot');
+    }
+    const depotIndexOf = new Map(depots.map((d, i) => [d.id, i]));
+    const D = depots.length;
 
     const deliveries = input.delivery_ids?.length
       ? await deliveryRepository.findByIds(input.delivery_ids)
@@ -117,26 +179,35 @@ export const routeService = {
       throw AppError.badRequest('No deliveries selected for optimisation');
     }
 
-    // Index 0 = depot, 1..n = deliveries.
+    // Node layout: indices 0..D-1 = depots, D.. = deliveries.
     const points = [
-      { latitude: depot.latitude, longitude: depot.longitude },
+      ...depots.map((d) => ({ latitude: d.latitude, longitude: d.longitude })),
       ...deliveries.map((d) => ({ latitude: d.latitude, longitude: d.longitude })),
     ];
 
-    const job = await routeRepository.createJob(input.depot_id, input.objective);
+    // The first depot in play is the job's primary depot (kept on route_jobs for
+    // backward-compat and the savings baseline / dashboard rollups).
+    const job = await routeRepository.createJob(depots[0].id, input.objective);
     if (!job) throw new AppError(500, 'Failed to create route job');
 
     try {
       const matrix = await buildMatrix(points);
 
+      // Each vehicle starts and ends at its assigned depot's node index.
+      const starts = assignments.map((a) => depotIndexOf.get(a.depot_id)!);
+      const costMatrix = input.objective === 'distance' ? matrix.distances : matrix.durations;
+
       const solution = await solve({
-        num_vehicles: activeVehicles.length,
+        num_vehicles: assignments.length,
         depot_index: 0,
         distance_matrix: matrix.distances,
         time_matrix: matrix.durations,
-        demands: [0, ...deliveries.map((d) => d.weight)],
-        vehicle_capacities: activeVehicles.map((v) => v.capacity_kg),
+        demands: [...depots.map(() => 0), ...deliveries.map((d) => d.weight)],
+        vehicle_capacities: assignments.map((a) => a.vehicle.capacity_kg),
         objective: input.objective,
+        starts,
+        ends: starts,
+        penalties: priorityPenalties(deliveries, costMatrix, D),
       });
 
       if (solution.status !== 'OK') {
@@ -154,17 +225,20 @@ export const routeService = {
 
       const results: Omit<RouteResult, 'id' | 'job_id' | 'created_at'>[] = await Promise.all(
         solution.routes.map(async (route, i) => {
-          const vehicle = activeVehicles[route.vehicle];
+          const assignment = assignments[route.vehicle];
+          const vehicle = assignment.vehicle;
+          const homeDepot = depots[depotIndexOf.get(assignment.depot_id)!];
           const stops: DeliveryStop[] = [];
           // Ordered waypoints (depot → stops → depot) as [lat,lng].
           const waypoints: [number, number][] = [];
           let seq = 1;
           for (const matrixIndex of route.stops) {
-            if (matrixIndex === 0) {
-              waypoints.push([depot.latitude, depot.longitude]);
+            if (matrixIndex < D) {
+              const dp = depots[matrixIndex]; // a depot node (this vehicle's home)
+              waypoints.push([dp.latitude, dp.longitude]);
               continue;
             }
-            const d = deliveries[matrixIndex - 1];
+            const d = deliveries[matrixIndex - D];
             waypoints.push([d.latitude, d.longitude]);
             stops.push({
               delivery_id: d.id,
@@ -188,6 +262,7 @@ export const routeService = {
           return {
             vehicle_id: vehicle.id,
             vehicle_name: vehicle.name,
+            depot_id: homeDepot.id,
             color: PALETTE[i % PALETTE.length],
             stop_sequence: stops,
             geometry,
@@ -207,21 +282,27 @@ export const routeService = {
       };
 
       // Savings analysis: compare the optimized plan against baseline scenarios
-      // using the same matrix, so the comparison is verifiable.
-      const analysis = computeBaselines(matrix.distances, matrix.durations, {
-        distance: summary.total_distance,
-        time: summary.total_time,
-      });
+      // using the same matrix, so the comparison is verifiable. Deliveries live
+      // at node indices D..D+n-1; the baseline is measured from the primary
+      // depot (index 0) — one unplanned vehicle, the same reference everywhere.
+      const deliveryIndices = deliveries.map((_, i) => i + D);
+      const analysis = computeBaselines(
+        matrix.distances,
+        matrix.durations,
+        { distance: summary.total_distance, time: summary.total_time },
+        deliveryIndices
+      );
 
-      // Build the "usual" route as drawable data (single vehicle, entered order).
-      // `source: 'mock'` today; an uploaded baseline can replace it later.
-      // Fetched LAST (after the optimized routes are already resolved above), so a
-      // rate-limited baseline call can only fall back to straight lines for itself
-      // — it can never degrade the optimized routes' road geometry.
+      // Build the "usual" route as drawable data (single vehicle from the primary
+      // depot, entered order). `source: 'mock'` today; an uploaded baseline can
+      // replace it later. Fetched LAST (after the optimized routes are already
+      // resolved above), so a rate-limited baseline call can only fall back to
+      // straight lines for itself — never degrading the optimized road geometry.
+      const primaryDepot = depots[0];
       const usualWaypoints: [number, number][] = [
-        [depot.latitude, depot.longitude],
+        [primaryDepot.latitude, primaryDepot.longitude],
         ...deliveries.map((d) => [d.latitude, d.longitude] as [number, number]),
-        [depot.latitude, depot.longitude],
+        [primaryDepot.latitude, primaryDepot.longitude],
       ];
       const usualRoad = await roadGeometry(
         usualWaypoints.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))

@@ -91,6 +91,7 @@ export interface RouteResult {
   job_id: string;
   vehicle_id: string | null;
   vehicle_name: string;
+  depot_id: string | null; // home depot this vehicle departs from (multi-depot)
   color: string;
   stop_sequence: DeliveryStop[];
   geometry: [number, number][];

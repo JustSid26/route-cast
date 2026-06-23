@@ -6,7 +6,7 @@ const JOB_COLS =
    vehicle_count, stop_count, error, analysis, created_at, updated_at`;
 
 const RESULT_COLS =
-  `id, job_id, vehicle_id, vehicle_name, color, stop_sequence, geometry,
+  `id, job_id, vehicle_id, vehicle_name, depot_id, color, stop_sequence, geometry,
    total_distance, total_time, load_kg, utilization_pct, created_at`;
 
 export const routeRepository = {
@@ -69,11 +69,11 @@ export const routeRepository = {
       for (const r of results) {
         await client.query(
           `INSERT INTO route_results
-             (job_id, vehicle_id, vehicle_name, color, stop_sequence, geometry,
+             (job_id, vehicle_id, vehicle_name, depot_id, color, stop_sequence, geometry,
               total_distance, total_time, load_kg, utilization_pct)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
           [
-            jobId, r.vehicle_id, r.vehicle_name, r.color,
+            jobId, r.vehicle_id, r.vehicle_name, r.depot_id, r.color,
             JSON.stringify(r.stop_sequence), JSON.stringify(r.geometry),
             r.total_distance, r.total_time, r.load_kg, r.utilization_pct,
           ]

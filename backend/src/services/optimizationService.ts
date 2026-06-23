@@ -11,6 +11,11 @@ export interface SolveRequest {
   demands: number[];
   vehicle_capacities: number[];
   objective: Objective;
+  // Multi-depot: per-vehicle home-depot node indices.
+  starts?: number[];
+  ends?: number[];
+  // Per-node drop penalty encoding delivery priority.
+  penalties?: number[];
 }
 
 export interface SolvedRoute {
