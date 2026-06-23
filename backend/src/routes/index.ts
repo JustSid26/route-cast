@@ -35,6 +35,7 @@ router.delete('/deliveries/:id', asyncHandler(deliveryController.remove));
 router.get('/routes', asyncHandler(routeController.list));
 router.get('/routes/:id', asyncHandler(routeController.get));
 router.delete('/routes/:id', asyncHandler(routeController.remove));
+router.post('/routes/:id/baseline', asyncHandler(routeController.uploadBaseline));
 router.post('/optimize', asyncHandler(routeController.optimize));
 
 // Dashboard

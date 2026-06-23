@@ -9,7 +9,7 @@ import { formatDistance, formatDuration, formatWeight } from '@/lib/format';
 import { deliveriesForHub } from '@/lib/geo';
 import { PageHeader, Spinner, ErrorState } from '@/components/ui';
 import { SavingsPanel } from '@/components/SavingsPanel';
-import { buildRouteCsv, downloadCsv } from '@/lib/export';
+import { buildRouteCsv, downloadCsv, buildVehiclePdf, buildVehicleXlsx } from '@/lib/export';
 
 export default function OptimizePage() {
   const depots = useQuery({ queryKey: ['depots'], queryFn: api.listDepots });
@@ -25,6 +25,10 @@ export default function OptimizePage() {
   // Deliveries scoped to the chosen hub (their nearest depot), so picking a
   // hub shows and selects only that hub's stops.
   const hubDeliveries = deliveriesForHub(deliveries.data ?? [], depots.data ?? [], depotId);
+
+  // delivery_id → address, for per-driver route sheets (stops carry no address).
+  const addrById = new Map((deliveries.data ?? []).map((d) => [d.id, d.address] as const));
+  const resultDepot = result ? depots.data?.find((d) => d.id === result.job.depot_id) ?? null : null;
 
   // Default selections once data loads.
   useEffect(() => {
@@ -185,7 +189,8 @@ export default function OptimizePage() {
                     <th className="px-3 py-2 font-medium">Stops</th>
                     <th className="px-3 py-2 font-medium">Distance</th>
                     <th className="px-3 py-2 font-medium">Time</th>
-                    <th className="px-5 py-2 font-medium">Utilization</th>
+                    <th className="px-3 py-2 font-medium">Utilization</th>
+                    <th className="px-5 py-2 font-medium">Driver sheet</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -203,12 +208,18 @@ export default function OptimizePage() {
                       <td className="px-3 py-3 text-slate-600">{r.stop_sequence.length}</td>
                       <td className="px-3 py-3 text-slate-600">{formatDistance(r.total_distance)}</td>
                       <td className="px-3 py-3 text-slate-600">{formatDuration(r.total_time)}</td>
-                      <td className="px-5 py-3">
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-2">
                           <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100">
                             <div className="h-full rounded-full" style={{ width: `${Math.min(100, r.utilization_pct)}%`, background: r.color }} />
                           </div>
                           <span className="text-xs text-slate-500">{r.utilization_pct}%</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex gap-2 text-xs">
+                          <button className="text-brand-600 hover:underline" onClick={() => buildVehiclePdf(r, resultDepot, addrById)}>PDF</button>
+                          <button className="text-brand-600 hover:underline" onClick={() => buildVehicleXlsx(r, resultDepot, addrById)}>Excel</button>
                         </div>
                       </td>
                     </tr>

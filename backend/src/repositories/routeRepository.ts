@@ -38,6 +38,13 @@ export const routeRepository = {
   removeJob: (id: string) =>
     queryOne<{ id: string }>(`DELETE FROM route_jobs WHERE id=$1 RETURNING id`, [id]),
 
+  /** Replace only the analysis JSON for a job (e.g. swapping in an uploaded baseline). */
+  updateAnalysis: (id: string, analysis: unknown) =>
+    queryOne<RouteJob>(
+      `UPDATE route_jobs SET analysis=$2 WHERE id=$1 RETURNING ${JOB_COLS}`,
+      [id, JSON.stringify(analysis)]
+    ),
+
   /**
    * Persist a completed optimisation atomically: update the job summary and
    * insert all per-vehicle results in one transaction.

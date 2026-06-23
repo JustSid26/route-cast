@@ -5,9 +5,10 @@ import { routeRepository } from '../repositories/routeRepository';
 import { buildMatrix } from './matrixService';
 import { roadGeometry } from './directionsService';
 import { solve } from './optimizationService';
-import { computeBaselines } from './analysisService';
+import { computeBaselines, routeCost } from './analysisService';
+import { parseUsualRoute } from './csvService';
 import { AppError } from '../utils/AppError';
-import { DeliveryStop, RouteResult, Vehicle } from '../types';
+import { DeliveryStop, RouteAnalysis, RouteResult, Vehicle } from '../types';
 import { OptimizeInput } from '../validation/schemas';
 
 // Route colours chosen to contrast OpenStreetMap basemaps — warm reds, oranges,
@@ -34,6 +35,63 @@ export const routeService = {
   },
 
   dashboard: () => routeRepository.dashboard(),
+
+  /**
+   * Replace a completed job's baseline with the manager's actual "usual route".
+   * The uploaded stop order is run through the SAME matrix construction as
+   * `optimize` (depot at index 0), so optimized-vs-usual stays comparable, and
+   * the baseline is marked `source: 'uploaded'` (drops the UI "(estimated)" tag).
+   */
+  uploadBaseline: async (jobId: string, input: { csv: string }) => {
+    const { job } = await routeService.getJob(jobId);
+    const analysis = job.analysis as RouteAnalysis;
+    if (job.status !== 'completed' || !analysis.baseline) {
+      throw AppError.badRequest('A baseline can only be uploaded for a completed route');
+    }
+    if (!job.depot_id) throw AppError.badRequest('Route has no depot');
+    const depot = await depotRepository.findById(job.depot_id);
+    if (!depot) throw AppError.badRequest('Route depot no longer exists');
+
+    // Reorder the job's deliveries into the manager's actual driving order.
+    const ordered = parseUsualRoute(input.csv, analysis.baseline.stop_sequence);
+
+    // Same point layout as optimize(): index 0 = depot, 1..n = stops (in order).
+    const points = [
+      { latitude: depot.latitude, longitude: depot.longitude },
+      ...ordered.map((s) => ({ latitude: s.latitude, longitude: s.longitude })),
+    ];
+    const matrix = await buildMatrix(points);
+    const cost = routeCost(
+      ordered.map((_, i) => i + 1),
+      matrix.distances,
+      matrix.durations
+    );
+
+    const waypoints: [number, number][] = [
+      [depot.latitude, depot.longitude],
+      ...ordered.map((s) => [s.latitude, s.longitude] as [number, number]),
+      [depot.latitude, depot.longitude],
+    ];
+    const road = await roadGeometry(
+      waypoints.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))
+    );
+
+    // The uploaded route IS now the "usual" scenario, so the savings panel and
+    // dashboard (both keyed on analysis.usual) compare against it — not just the
+    // drawn baseline. optimized/average/worst stay as computed at solve time.
+    const usual = { distance: Math.round(cost.distance), time: Math.round(cost.time) };
+    analysis.usual = usual;
+    analysis.baseline = {
+      source: 'uploaded',
+      stop_sequence: ordered.map((s, i) => ({ ...s, sequence: i + 1 })),
+      geometry: road ?? waypoints,
+      total_distance: usual.distance,
+      total_time: usual.time,
+    };
+
+    await routeRepository.updateAnalysis(jobId, analysis);
+    return routeService.getJob(jobId);
+  },
 
   /**
    * End-to-end optimisation: resolve inputs → build matrix → solve → persist.

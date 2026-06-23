@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { routeService } from '../services/routeService';
 import { parseBody } from '../middleware/validate';
-import { optimizeSchema } from '../validation/schemas';
+import { optimizeSchema, csvSchema } from '../validation/schemas';
 
 export const routeController = {
   list: async (_req: Request, res: Response) => {
@@ -17,6 +17,10 @@ export const routeController = {
   optimize: async (req: Request, res: Response) => {
     const input = parseBody(optimizeSchema, req);
     res.status(201).json(await routeService.optimize(input));
+  },
+  uploadBaseline: async (req: Request, res: Response) => {
+    const input = parseBody(csvSchema, req);
+    res.json(await routeService.uploadBaseline(req.params.id, input));
   },
   dashboard: async (_req: Request, res: Response) => {
     res.json(await routeService.dashboard());

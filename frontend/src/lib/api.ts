@@ -44,6 +44,8 @@ export const api = {
   getRoute: (id: string) => http.get<RouteJobDetail>(`/routes/${id}`).then((r) => r.data),
   deleteRoute: (id: string) => http.delete(`/routes/${id}`).then(() => undefined),
   optimize: (input: OptimizeInput) => http.post<RouteJobDetail>('/optimize', input).then((r) => r.data),
+  uploadBaseline: (jobId: string, csv: string) =>
+    http.post<RouteJobDetail>(`/routes/${jobId}/baseline`, { csv }).then((r) => r.data),
 
   // Dashboard
   dashboard: () => http.get<DashboardStats>('/dashboard').then((r) => r.data),

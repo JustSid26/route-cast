@@ -37,10 +37,25 @@ to it.
 ### RouteJob
 ```
 { id, depot_id, status, objective, total_distance, total_time,
-  vehicle_count, stop_count, error, created_at, updated_at }
+  vehicle_count, stop_count, error, analysis, created_at, updated_at }
 ```
 - `status`: `pending | running | completed | failed`
 - `objective`: `distance | time`
+- `analysis`: `RouteAnalysis` once completed (otherwise `{}`).
+
+### RouteAnalysis (savings comparison, all measured on the same matrix)
+```
+{ stops,
+  optimized: ScenarioMetric, usual: ScenarioMetric,
+  average: ScenarioMetric,   worst: ScenarioMetric,
+  baseline?: BaselineRoute }
+```
+- `ScenarioMetric`: `{ distance, time }` (meters, seconds).
+- `BaselineRoute`: `{ source, stop_sequence: DeliveryStop[], geometry: [lat,lng][],
+  total_distance, total_time }` — the "usual route" drawn on the map / used by
+  the savings panel.
+- `source`: `mock` (deliveries in entered order, tagged "(estimated)" in the UI)
+  | `uploaded` (manager's actual route, supplied via `POST /routes/:id/baseline`).
 
 ### RouteResult (one per vehicle used in a job)
 ```
@@ -75,6 +90,7 @@ to it.
 | GET    | /routes               | —                             | RouteJob[]             |
 | GET    | /routes/:id           | —                             | { job, results }       |
 | DELETE | /routes/:id           | —                             | 204                    |
+| POST   | /routes/:id/baseline  | { csv: string }               | { job, results }       |
 | POST   | /optimize             | OptimizeInput                 | { job, results }       |
 | GET    | /dashboard            | —                             | DashboardStats         |
 | GET    | /geocode?q=text       | —                             | GeoResult[]            |
@@ -88,6 +104,13 @@ OpenRouteService (Pelias) geocoder. Requires `ORS_API_KEY`; returns 400 if unset
   vehicle_ids?: string[],     // default: all active vehicles
   delivery_ids?: string[] }   // default: all deliveries
 ```
+
+`POST /routes/:id/baseline` — upload the manager's actual "usual route" for a
+completed job as a CSV of stops in driving order. Header must include `sequence`
+plus either `delivery_id` (exact match) or `customer_name` (matched against the
+job's deliveries). The stops are run through the same matrix as the job and saved
+as `analysis.baseline` with `source: "uploaded"`. The CSV must cover exactly the
+job's deliveries (no extras, duplicates, or omissions) or the request is 400.
 
 `DashboardStats`:
 ```

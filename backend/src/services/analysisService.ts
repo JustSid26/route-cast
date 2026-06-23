@@ -6,7 +6,7 @@
 import { ScenarioMetric, RouteAnalysis } from '../types';
 
 /** Distance + time of a single-vehicle route depot → order[] → depot. */
-function routeCost(
+export function routeCost(
   order: number[],
   distance: number[][],
   time: number[][]
