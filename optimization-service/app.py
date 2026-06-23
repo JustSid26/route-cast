@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -22,6 +22,11 @@ class SolvePayload(BaseModel):
     demands: List[float]
     vehicle_capacities: List[float]
     objective: Literal["distance", "time"] = "distance"
+    # Multi-depot: per-vehicle home-depot node indices (optional).
+    starts: Optional[List[int]] = None
+    ends: Optional[List[int]] = None
+    # Per-node drop penalty encoding delivery priority (optional).
+    penalties: Optional[List[float]] = None
 
 
 class RouteOut(BaseModel):
@@ -56,6 +61,9 @@ def solve_endpoint(payload: SolvePayload) -> SolveResponse:
                 vehicle_capacities=payload.vehicle_capacities,
                 objective=payload.objective,
                 time_limit_seconds=DEFAULT_TIME_LIMIT,
+                starts=payload.starts,
+                ends=payload.ends,
+                penalties=payload.penalties,
             )
         )
     except ValueError as exc:

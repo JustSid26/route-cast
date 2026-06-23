@@ -3,11 +3,20 @@
 The solver is intentionally decoupled from any transport/HTTP concern so it can be
 unit-tested and so future constraints (time windows, vehicle restrictions) can be
 layered in as additional dimensions without touching the service layer.
+
+Supports both single- and multi-depot problems:
+  * single depot  -> pass `depot_index` (all vehicles start/end there)
+  * multiple depots -> pass per-vehicle `starts` and `ends` (the matrix index of
+    each vehicle's home depot). Several depot nodes can share the matrix.
+
+Per-node `penalties` let the caller encode delivery priority: when capacity forces
+a delivery to be dropped, the node with the *smallest* penalty is dropped first,
+so higher-priority (or heavier) stops survive.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
@@ -22,6 +31,13 @@ class SolveRequest:
     vehicle_capacities: List[float]      # length == num_vehicles
     objective: Literal["distance", "time"] = "distance"
     time_limit_seconds: int = 10
+    # Multi-depot: per-vehicle home-depot node indices. When provided they take
+    # precedence over depot_index. Both must be given together.
+    starts: Optional[List[int]] = None
+    ends: Optional[List[int]] = None
+    # Per-node drop penalty (priority). Higher = more important to serve.
+    # Depot nodes are ignored. When omitted, a uniform penalty is used.
+    penalties: Optional[List[float]] = None
 
 
 @dataclass
@@ -52,8 +68,17 @@ def _validate(req: SolveRequest) -> None:
         raise ValueError("demands length must match matrix size")
     if len(req.vehicle_capacities) != req.num_vehicles:
         raise ValueError("vehicle_capacities length must equal num_vehicles")
-    if not (0 <= req.depot_index < n):
+    if (req.starts is None) != (req.ends is None):
+        raise ValueError("starts and ends must be provided together")
+    if req.starts is not None and req.ends is not None:
+        if len(req.starts) != req.num_vehicles or len(req.ends) != req.num_vehicles:
+            raise ValueError("starts/ends length must equal num_vehicles")
+        if any(not (0 <= s < n) for s in req.starts) or any(not (0 <= e < n) for e in req.ends):
+            raise ValueError("starts/ends index out of range")
+    elif not (0 <= req.depot_index < n):
         raise ValueError("depot_index out of range")
+    if req.penalties is not None and len(req.penalties) != n:
+        raise ValueError("penalties length must match matrix size")
 
 
 def solve(req: SolveRequest) -> SolveResult:
@@ -69,7 +94,15 @@ def solve(req: SolveRequest) -> SolveResult:
     capacities = [int(round(c)) for c in req.vehicle_capacities]
     cost = dist if req.objective == "distance" else time
 
-    manager = pywrapcp.RoutingIndexManager(n, req.num_vehicles, req.depot_index)
+    # Depot node(s): the set of vehicle start/end nodes (multi-depot) or the
+    # single depot_index. These are never droppable and carry no demand.
+    if req.starts is not None and req.ends is not None:
+        depot_nodes = set(req.starts) | set(req.ends)
+        manager = pywrapcp.RoutingIndexManager(n, req.num_vehicles, req.starts, req.ends)
+    else:
+        depot_nodes = {req.depot_index}
+        manager = pywrapcp.RoutingIndexManager(n, req.num_vehicles, req.depot_index)
+
     routing = pywrapcp.RoutingModel(manager)
 
     def cost_cb(from_index: int, to_index: int) -> int:
@@ -92,11 +125,17 @@ def solve(req: SolveRequest) -> SolveResult:
     )
 
     # Allow dropping nodes so an over-subscribed scenario still returns a plan.
-    # Penalty must exceed any realistic detour so the solver only drops when forced.
-    penalty = sum(sum(row) for row in cost) + 1
+    # The base penalty must exceed any realistic detour so the solver only drops
+    # when forced; per-node penalties (priority) then decide *which* node drops —
+    # the smallest-penalty (lowest-priority / lightest) node goes first.
+    base_penalty = sum(sum(row) for row in cost) + 1
     for node in range(n):
-        if node == req.depot_index:
+        if node in depot_nodes:
             continue
+        if req.penalties is not None:
+            penalty = max(1, int(round(req.penalties[node])))
+        else:
+            penalty = base_penalty
         routing.AddDisjunction([manager.NodeToIndex(node)], penalty)
 
     params = pywrapcp.DefaultRoutingSearchParameters()
@@ -126,7 +165,8 @@ def solve(req: SolveRequest) -> SolveResult:
             node = manager.IndexToNode(index)
             stops.append(node)
             route_load += demands[node]
-            served.add(node)
+            if node not in depot_nodes:
+                served.add(node)
             nxt = solution.Value(routing.NextVar(index))
             from_node = node
             to_node = manager.IndexToNode(nxt)
@@ -146,6 +186,6 @@ def solve(req: SolveRequest) -> SolveResult:
 
     dropped = [
         node for node in range(n)
-        if node != req.depot_index and node not in served
+        if node not in depot_nodes and node not in served
     ]
     return SolveResult(status="OK", routes=routes, dropped=dropped)
