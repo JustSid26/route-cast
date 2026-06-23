@@ -1,76 +1,65 @@
-# Work tickets
+# Stuff to pick up
 
-Hand-off tasks scoped to be worked independently. Branch per ticket, open a PR,
-let CI pass, review + merge. Coordinate only on the shared files flagged below.
-
----
-
-## Ticket 1 — Upload "usual routes" (CSV) to compare against optimized
-
-**Context**
-Today the "usual route" in the comparison is *mocked* — the backend builds it
-from deliveries in entered order (`analysis.baseline.source = 'mock'`, see
-`backend/src/services/routeService.ts`). We want users to upload their *actual*
-current route so the savings reflect reality. The seam already exists:
-`BaselineRoute.source` is `'mock' | 'uploaded'`, and the map + `SavingsPanel`
-already render `analysis.baseline`.
-
-**Scope / tasks**
-- **Backend:** add `POST /api/routes/:id/baseline` accepting a CSV of the usual
-  route (ordered stops). Parse it (reuse patterns in `csvService.ts`), match rows
-  to the job's deliveries (by `delivery_id`, or name/coords), compute distance +
-  time from the **same matrix logic** so it's comparable, fetch road geometry
-  (`directionsService.roadGeometry`), and store as `analysis.baseline` with
-  `source: 'uploaded'`. Recompute `analysis.usual` totals from the uploaded route.
-- **Frontend:** an "Upload usual route" action on the Map page (file input →
-  `POST` → refetch). The legend already drops "(estimated)" when
-  `source !== 'mock'`.
-- Define + document the upload CSV format (e.g. `sequence,delivery_id` or
-  `sequence,customer_name,latitude,longitude`).
-
-**Acceptance criteria**
-- Can upload a usual-route CSV for a completed job; map overlay + `SavingsPanel`
-  update to the uploaded route.
-- Savings recompute vs the uploaded route; legend shows "Usual" (no "estimated").
-- Invalid/mismatched CSV → friendly per-row errors (like the delivery importer).
-
-**Files:** `routeController.ts`, `routeService.ts`, `csvService.ts`,
-`routeRepository.ts`, `CONTRACT.md`, frontend `lib/api.ts`, `app/map/page.tsx`.
-**⚠ Coordinate:** touches `CONTRACT.md` + the `types` mirrors (shared). Do the
-contract/type addition as a **small first PR**, then build on it.
+A couple of things that are ready to go — grab whichever one you fancy. Both are
+pretty self-contained. Branch off main, open a PR when you're ready, let CI run,
+and I'll review.
 
 ---
 
-## Ticket 2 — Per-driver route sheets (PDF / Excel)
+## 1. Let people upload their own "usual route"
 
-**Context**
-We already export a combined CSV of all vehicles
-(`frontend/src/lib/export.ts` → `buildRouteCsv`). Drivers need a clean, printable
-**per-vehicle** sheet: depart depot → ordered stops → return.
+Right now the "optimized vs usual" comparison is a bit of a cheat — the "usual"
+route is just the deliveries in the order they were added, and we pretend that's
+how they'd normally drive. Fine for a demo, but the real pitch is *"here's how
+**you** drive today vs what we'd do instead."*
 
-**Scope / tasks**
-- Add per-driver export to `lib/export.ts`: filter to one vehicle, produce **PDF**
-  (e.g. `jspdf` + `jspdf-autotable`, or a print-friendly HTML view) and **Excel**
-  (`xlsx`/SheetJS, or per-vehicle CSV).
-- Sheet contents: vehicle name, depot, then a numbered table of stops (sequence,
-  customer, address, weight), plus totals (distance, time, utilization %).
-- UI: a "Driver sheet" download control per vehicle on the Optimize results table
-  and the Map summary.
+So let's let them upload their actual route as a CSV and use that as the baseline.
 
-**Acceptance criteria**
-- One PDF and one Excel per vehicle, with ordered stops + totals, open correctly
-  in Acrobat/Excel.
-- Reachable from both Optimize and Map.
+The good news is most of the plumbing already exists — the baseline has a `source`
+field (`mock` vs `uploaded`), and the map + savings panel already draw whatever's
+sitting in `analysis.baseline`. So really it's:
 
-**Files:** `frontend/src/lib/export.ts` (extend), a new component,
-`frontend/package.json` (new dep).
-**⚠ Coordinate:** adding a dependency edits `package.json` — give this ticket sole
-ownership of that file for its PR to avoid conflicts. Low risk otherwise.
+- an endpoint that takes a CSV of stops in order, matches them to the job's
+  deliveries, runs them through the *same* distance/time matrix (so the numbers
+  are comparable), grabs the road geometry, and saves it as the baseline with
+  `source: 'uploaded'`
+- a small "upload usual route" button on the map page
+- pick a sensible CSV format — probably `sequence,delivery_id`, or
+  `sequence,customer_name,latitude,longitude`
+
+It's done when you can upload a route for a finished job and the map + savings
+flip to comparing against it (and the little "(estimated)" tag disappears).
+
+Worth poking around `routeService.ts` and `csvService.ts` — there's already a CSV
+importer you can lean on. One heads-up: this changes the API a bit (CONTRACT.md +
+the shared types), so give me a shout before you lock that down so we don't step on
+each other — easiest if we agree on the shape first.
 
 ---
 
-### Workflow reminder
-- Branch names: `feature/upload-usual-route`, `feature/driver-sheets`.
-- Keep PRs small; rebase on `main` before pushing.
-- Agree on `CONTRACT.md` changes before coding (it's the shared API spec).
-- New DB schema changes → add a new numbered migration file, never edit an applied one.
+## 2. Printable route sheet for each driver
+
+We can already dump one big CSV of everything, but what drivers actually want is a
+clean sheet *per truck* — where to leave from, the stops in order, the totals —
+something they can print or pull up on their phone.
+
+So: a per-vehicle export. A PDF (jspdf works, or honestly just a print-friendly
+page) and an Excel/xlsx version. Each sheet is one truck: vehicle name, depot, the
+numbered stops with customer/address/weight, and the totals at the bottom. Drop a
+download button next to each vehicle on both the Optimize results and the map.
+
+Done = one PDF and one spreadsheet per truck, opens cleanly, stops in the right
+order.
+
+There's already a CSV builder in `frontend/src/lib/export.ts` you can build on.
+Only thing to watch: you'll be adding a dependency, so you'll touch package.json —
+just own that file for this PR and we won't clash.
+
+---
+
+A few ground rules so merging stays painless:
+
+- one branch per task — `feature/upload-usual-route`, `feature/driver-sheets`
+- keep PRs small, rebase on main before you push
+- shout before touching CONTRACT.md or package.json
+- new DB change? add a new migration file, don't edit an old one
