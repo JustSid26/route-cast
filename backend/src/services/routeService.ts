@@ -10,11 +10,12 @@ import { AppError } from '../utils/AppError';
 import { DeliveryStop, RouteResult, Vehicle } from '../types';
 import { OptimizeInput } from '../validation/schemas';
 
-// Distinct, high-contrast colours assigned to vehicle routes on the map.
-// Leads with brand green; remaining hues stay distinct for multi-vehicle plans.
+// Route colours chosen to contrast OpenStreetMap basemaps — warm reds, oranges,
+// purples and magentas, which never appear as map fills (greens=parks,
+// blues=water). Avoids green/blue/teal so routes don't dissolve into the map.
 const PALETTE = [
-  '#16a34a', '#0891b2', '#d97706', '#7c3aed', '#dc2626',
-  '#db2777', '#0d9488', '#65a30d', '#475569', '#c026d3',
+  '#e11d48', '#9333ea', '#ea580c', '#db2777', '#c026d3',
+  '#7c3aed', '#b91c1c', '#a21caf', '#be185d', '#9f1239',
 ];
 
 export const routeService = {
@@ -153,6 +154,34 @@ export const routeService = {
         distance: summary.total_distance,
         time: summary.total_time,
       });
+
+      // Build the "usual" route as drawable data (single vehicle, entered order).
+      // `source: 'mock'` today; an uploaded baseline can replace it later.
+      // Fetched LAST (after the optimized routes are already resolved above), so a
+      // rate-limited baseline call can only fall back to straight lines for itself
+      // — it can never degrade the optimized routes' road geometry.
+      const usualWaypoints: [number, number][] = [
+        [depot.latitude, depot.longitude],
+        ...deliveries.map((d) => [d.latitude, d.longitude] as [number, number]),
+        [depot.latitude, depot.longitude],
+      ];
+      const usualRoad = await roadGeometry(
+        usualWaypoints.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))
+      );
+      analysis.baseline = {
+        source: 'mock',
+        stop_sequence: deliveries.map((d, i) => ({
+          delivery_id: d.id,
+          customer_name: d.customer_name,
+          latitude: d.latitude,
+          longitude: d.longitude,
+          weight: d.weight,
+          sequence: i + 1,
+        })),
+        geometry: usualRoad ?? usualWaypoints,
+        total_distance: analysis.usual.distance,
+        total_time: analysis.usual.time,
+      };
 
       await routeRepository.completeJob(job.id, summary, results, analysis);
       return routeService.getJob(job.id);

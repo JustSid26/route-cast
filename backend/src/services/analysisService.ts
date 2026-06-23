@@ -3,18 +3,7 @@
 // apples-to-apples ("with proof"). Fuel/money are derived in the UI from these
 // numbers with editable assumptions, keeping the calculation transparent.
 
-export interface ScenarioMetric {
-  distance: number; // meters (total across the route)
-  time: number; // seconds
-}
-
-export interface RouteAnalysis {
-  stops: number;
-  optimized: ScenarioMetric; // best — the OR-Tools plan
-  usual: ScenarioMetric; // stops in entered order, single vehicle
-  average: ScenarioMetric; // expected random ordering (no planning)
-  worst: ScenarioMetric; // each stop as its own round trip
-}
+import { ScenarioMetric, RouteAnalysis } from '../types';
 
 /** Distance + time of a single-vehicle route depot → order[] → depot. */
 function routeCost(
