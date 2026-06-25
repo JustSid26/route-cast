@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateCsv, parseUsualRoute } from './csvService';
+import { validateCsv, parseUsualRoute, validateVehicleCsv, validateDepotCsv } from './csvService';
 import { DeliveryStop } from '../types';
 
 const HEADER = 'customer_name,address,latitude,longitude,weight,volume,priority';
@@ -74,4 +74,41 @@ test('parseUsualRoute rejects duplicate stops', () => {
 
 test('parseUsualRoute requires a sequence column', () => {
   assert.throws(() => parseUsualRoute('delivery_id\na\nb\nc', STOPS), /sequence/);
+});
+
+test('validateVehicleCsv parses rows and applies defaults', () => {
+  const csv = 'name,registration_number,capacity_kg,max_height_m,max_weight_kg,avg_speed_kmh,active\n'
+    + 'Truck X,KA01XX0001,1200,2.6,1200,38,yes\n'
+    + 'Van Y,,600,,,,no';
+  const r = validateVehicleCsv(csv);
+  assert.equal(r.valid.length, 2);
+  assert.equal(r.errors.length, 0);
+  assert.equal(r.valid[0].capacity_kg, 1200);
+  assert.equal(r.valid[0].active, true);
+  assert.equal(r.valid[1].active, false);
+  assert.equal(r.valid[1].avg_speed_kmh, 40); // schema default
+});
+
+test('validateVehicleCsv flags a non-positive capacity', () => {
+  const r = validateVehicleCsv('name,capacity_kg\nBad Truck,0');
+  assert.equal(r.valid.length, 0);
+  assert.equal(r.errors.length, 1);
+});
+
+test('validateVehicleCsv requires name + capacity_kg columns', () => {
+  assert.throws(() => validateVehicleCsv('name,active\nTruck,yes'), /capacity_kg/);
+});
+
+test('validateDepotCsv parses rows and collects bad coordinates', () => {
+  const csv = 'name,address,latitude,longitude\n'
+    + 'Hub A,MG Road,12.97,77.59\n'
+    + 'Hub B,Bad,999,77.6';
+  const r = validateDepotCsv(csv);
+  assert.equal(r.valid.length, 1);
+  assert.equal(r.errors.length, 1);
+  assert.equal(r.valid[0].name, 'Hub A');
+});
+
+test('validateDepotCsv requires lat/long columns', () => {
+  assert.throws(() => validateDepotCsv('name,address\nHub,Road'), /latitude/);
 });

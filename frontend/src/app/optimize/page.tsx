@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { api, apiError } from '@/lib/api';
@@ -10,6 +11,12 @@ import { deliveriesForHub } from '@/lib/geo';
 import { PageHeader, Spinner, ErrorState } from '@/components/ui';
 import { SavingsPanel } from '@/components/SavingsPanel';
 import { buildRouteCsv, downloadCsv, buildVehiclePdf, buildVehicleXlsx } from '@/lib/export';
+
+// Leaflet touches `window`; load the map only on the client.
+const RouteMap = dynamic(() => import('@/components/RouteMap'), {
+  ssr: false,
+  loading: () => <Spinner label="Loading map…" />,
+});
 
 export default function OptimizePage() {
   const depots = useQuery({ queryKey: ['depots'], queryFn: api.listDepots });
@@ -157,6 +164,10 @@ export default function OptimizePage() {
 
           {result && (
             <div className="space-y-4">
+            {/* Map renders immediately once the route is calculated. */}
+            <div className="card overflow-hidden p-0">
+              <RouteMap depot={resultDepot} results={result.results} />
+            </div>
             <div className="card overflow-hidden">
               {/* Compact summary bar */}
               <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-slate-100 px-5 py-3 text-sm">

@@ -133,6 +133,30 @@ export interface GeoResult {
   longitude: number;
 }
 
+// Inventory imports (uploaded Excel stored whole as JSON).
+export interface InventorySheet {
+  name: string;
+  columns: string[];
+  rows: (string | number | boolean | null)[][];
+}
+
+export interface InventoryImport {
+  id: string;
+  filename: string;
+  sheet_count: number;
+  row_count: number;
+  data: { sheets: InventorySheet[] };
+  created_at: string;
+}
+
+export interface InventoryImportSummary {
+  id: string;
+  filename: string;
+  sheet_count: number;
+  row_count: number;
+  created_at: string;
+}
+
 // Input payloads (omit server-managed fields)
 export type DepotInput = Omit<Depot, 'id' | 'created_at' | 'updated_at'>;
 export type VehicleInput = Omit<Vehicle, 'id' | 'created_at' | 'updated_at'>;

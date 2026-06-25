@@ -3,6 +3,7 @@ import {
   Depot, DepotInput, Vehicle, VehicleInput, Delivery, DeliveryInput,
   RouteJob, RouteJobDetail, OptimizeInput, DashboardStats,
   CsvValidation, CsvImportResult, GeoResult,
+  InventoryImport, InventoryImportSummary, InventorySheet,
 } from './types';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
@@ -49,6 +50,11 @@ export const api = {
 
   // Dashboard
   dashboard: () => http.get<DashboardStats>('/dashboard').then((r) => r.data),
+
+  // Inventory (Excel upload → stored whole, rendered on the Inventory tab)
+  getInventory: () => http.get<InventoryImport | null>('/inventory').then((r) => r.data),
+  importInventory: (payload: { filename: string; sheets: InventorySheet[] }) =>
+    http.post<InventoryImportSummary>('/inventory/import', payload).then((r) => r.data),
 
   // Geocoding (address → coordinates). An optional focus point biases results
   // toward that area (e.g. the selected hub) so local places are returned.

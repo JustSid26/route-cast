@@ -73,6 +73,20 @@ export const Icons = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  inventory: svg(
+    <>
+      <path d="M3 7.5 12 3l9 4.5-9 4.5-9-4.5Z" />
+      <path d="M3 7.5v9L12 21l9-4.5v-9" />
+      <path d="M7.5 9.75v4.5" />
+    </>
+  ),
+  forecast: svg(
+    <>
+      <path d="M3 3v18h18" />
+      <path d="M7 14l4-4 3 3 5-6" />
+      <path d="M19 7h-3M19 7v3" />
+    </>
+  ),
 };
 
 export type IconKey = keyof typeof Icons;

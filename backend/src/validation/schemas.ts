@@ -41,6 +41,17 @@ export const csvSchema = z.object({
   csv: z.string().min(1, 'csv content is required'),
 });
 
+export const inventoryImportSchema = z.object({
+  filename: z.string().trim().min(1, 'filename is required'),
+  sheets: z.array(z.object({
+    name: z.string(),
+    columns: z.array(z.string()),
+    rows: z.array(z.array(z.union([z.string(), z.number(), z.boolean(), z.null()]))),
+  })).min(1, 'at least one sheet is required'),
+});
+
+export type InventoryImportInput = z.infer<typeof inventoryImportSchema>;
+
 export type DepotInput = z.infer<typeof depotSchema>;
 export type VehicleInput = z.infer<typeof vehicleSchema>;
 export type DeliveryInput = z.infer<typeof deliverySchema>;
