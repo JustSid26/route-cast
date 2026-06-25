@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { api, apiError } from '@/lib/api';
@@ -10,6 +11,12 @@ import { nearestDepotId } from '@/lib/geo';
 import { PageHeader, Spinner, ErrorState } from '@/components/ui';
 import { SavingsPanel } from '@/components/SavingsPanel';
 import { buildRouteCsv, downloadCsv, buildVehiclePdf, buildVehicleXlsx } from '@/lib/export';
+
+// Leaflet touches `window`; load the map only on the client.
+const RouteMap = dynamic(() => import('@/components/RouteMap'), {
+  ssr: false,
+  loading: () => <Spinner label="Loading map…" />,
+});
 
 // A four-step guided flow so a non-technical user can build a plan by answering
 // plain questions. The optimisation, calculations and proof panel are unchanged
@@ -317,6 +324,10 @@ export default function OptimizePage() {
 
         {result && !optimize.isPending && (
           <div className="space-y-4">
+            {/* Map renders immediately once the route is calculated. */}
+            <div className="card overflow-hidden p-0">
+              <RouteMap depots={selectedDepots} results={result.results} />
+            </div>
             <div className="card overflow-hidden">
               <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-slate-100 px-5 py-3 text-sm">
                 <span className="badge bg-brand-50 capitalize text-brand-700">

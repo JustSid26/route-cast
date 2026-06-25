@@ -31,6 +31,27 @@ export const vehicleRepository = {
        v.max_weight_kg, v.avg_speed_kmh, v.active]
     ),
 
+  /** Bulk insert used by CSV/Excel import; single multi-row statement. */
+  createMany: async (rows: VehicleInput[]): Promise<number> => {
+    if (rows.length === 0) return 0;
+    const values: string[] = [];
+    const params: unknown[] = [];
+    rows.forEach((v, i) => {
+      const o = i * 7;
+      values.push(`($${o + 1},$${o + 2},$${o + 3},$${o + 4},$${o + 5},$${o + 6},$${o + 7})`);
+      params.push(v.name, v.registration_number, v.capacity_kg, v.max_height_m,
+        v.max_weight_kg, v.avg_speed_kmh, v.active);
+    });
+    const inserted = await query<{ id: string }>(
+      `INSERT INTO vehicles
+         (name, registration_number, capacity_kg, max_height_m,
+          max_weight_kg, avg_speed_kmh, active)
+       VALUES ${values.join(',')} RETURNING id`,
+      params
+    );
+    return inserted.length;
+  },
+
   update: (id: string, v: VehicleInput) =>
     queryOne<Vehicle>(
       `UPDATE vehicles SET

@@ -13,6 +13,8 @@ export const depotService = {
 
   create: (input: DepotInput) => depotRepository.create(input),
 
+  createMany: (rows: DepotInput[]) => depotRepository.createMany(rows),
+
   update: async (id: string, input: DepotInput) => {
     const updated = await depotRepository.update(id, input);
     if (!updated) throw AppError.notFound('Depot not found');

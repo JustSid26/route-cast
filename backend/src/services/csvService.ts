@@ -1,5 +1,8 @@
+import { z } from 'zod';
 import { AppError } from '../utils/AppError';
-import { deliverySchema, DeliveryInput } from '../validation/schemas';
+import {
+  deliverySchema, DeliveryInput, vehicleSchema, depotSchema,
+} from '../validation/schemas';
 import { DeliveryStop } from '../types';
 
 export interface RowError {
@@ -40,6 +43,64 @@ function toNumber(value: string): number | null {
   if (value === '' || value == null) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Number, or `undefined` when blank/non-numeric — so Zod `.default()` can apply. */
+function num(value: string | undefined): number | undefined {
+  const n = toNumber(value ?? '');
+  return n === null ? undefined : n;
+}
+
+/** Boolean from common spellings; `undefined` (→ schema default) when unrecognised. */
+function toBool(value: string | undefined): boolean | undefined {
+  const s = (value ?? '').trim().toLowerCase();
+  if (['true', 'yes', 'y', '1', 'active'].includes(s)) return true;
+  if (['false', 'no', 'n', '0', 'inactive'].includes(s)) return false;
+  return undefined;
+}
+
+/**
+ * Generic CSV → validated rows. Reuses {@link parseLine}; collects per-row errors
+ * (never throws on a bad row) and throws only on structural problems. `toRaw`
+ * maps a parsed row to the object shape expected by `schema`.
+ */
+function parseEntityCsv<S extends z.ZodTypeAny>(
+  csv: string,
+  required: string[],
+  toRaw: (cells: string[], idx: Record<string, number>) => unknown,
+  schema: S
+): { rows: number; valid: z.infer<S>[]; errors: RowError[] } {
+  const lines = csv
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .filter((l) => l.trim().length > 0);
+
+  if (lines.length === 0) throw AppError.badRequest('CSV file is empty');
+
+  const header = parseLine(lines[0]).map((h) => h.toLowerCase());
+  const missing = required.filter((c) => !header.includes(c));
+  if (missing.length > 0) {
+    throw AppError.badRequest(`CSV is missing required column(s): ${missing.join(', ')}`);
+  }
+  if (lines.length === 1) throw AppError.badRequest('CSV has a header but no data rows');
+
+  const idx: Record<string, number> = {};
+  header.forEach((h, i) => { idx[h] = i; });
+
+  const valid: z.infer<S>[] = [];
+  const errors: RowError[] = [];
+  for (let r = 1; r < lines.length; r++) {
+    const parsed = schema.safeParse(toRaw(parseLine(lines[r]), idx));
+    if (parsed.success) {
+      valid.push(parsed.data);
+    } else {
+      errors.push({
+        row: r,
+        message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+      });
+    }
+  }
+  return { rows: lines.length - 1, valid, errors };
 }
 
 /**
@@ -194,4 +255,37 @@ export function parseUsualRoute(csv: string, deliveries: DeliveryStop[]): Delive
   }
 
   return picked.sort((a, b) => a.seq - b.seq).map((p) => p.stop);
+}
+
+/** Parse + validate a Vehicles CSV (sheet). Required headers: name, capacity_kg. */
+export function validateVehicleCsv(csv: string) {
+  return parseEntityCsv(
+    csv,
+    ['name', 'capacity_kg'],
+    (cells, idx) => ({
+      name: cells[idx['name']] ?? '',
+      registration_number: cells[idx['registration_number']] ?? '',
+      capacity_kg: num(cells[idx['capacity_kg']]),
+      max_height_m: num(cells[idx['max_height_m']]),
+      max_weight_kg: num(cells[idx['max_weight_kg']]),
+      avg_speed_kmh: num(cells[idx['avg_speed_kmh']]),
+      active: toBool(cells[idx['active']]),
+    }),
+    vehicleSchema
+  );
+}
+
+/** Parse + validate a Depots CSV (sheet). Required headers: name, latitude, longitude. */
+export function validateDepotCsv(csv: string) {
+  return parseEntityCsv(
+    csv,
+    ['name', 'latitude', 'longitude'],
+    (cells, idx) => ({
+      name: cells[idx['name']] ?? '',
+      address: cells[idx['address']] ?? '',
+      latitude: num(cells[idx['latitude']]),
+      longitude: num(cells[idx['longitude']]),
+    }),
+    depotSchema
+  );
 }

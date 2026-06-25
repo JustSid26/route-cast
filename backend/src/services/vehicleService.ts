@@ -13,6 +13,8 @@ export const vehicleService = {
 
   create: (input: VehicleInput) => vehicleRepository.create(input),
 
+  createMany: (rows: VehicleInput[]) => vehicleRepository.createMany(rows),
+
   update: async (id: string, input: VehicleInput) => {
     const updated = await vehicleRepository.update(id, input);
     if (!updated) throw AppError.notFound('Vehicle not found');

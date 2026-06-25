@@ -102,6 +102,21 @@ export interface RouteResult {
   created_at: string;
 }
 
+export interface InventorySheet {
+  name: string;
+  columns: string[];
+  rows: (string | number | boolean | null)[][];
+}
+
+export interface InventoryImport {
+  id: string;
+  filename: string;
+  sheet_count: number;
+  row_count: number;
+  data: { sheets: InventorySheet[] };
+  created_at: string;
+}
+
 export interface DashboardStats {
   total_deliveries: number;
   total_vehicles: number;

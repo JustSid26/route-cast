@@ -22,6 +22,24 @@ export const depotRepository = {
       [d.name, d.address, d.latitude, d.longitude]
     ),
 
+  /** Bulk insert used by CSV/Excel import; single multi-row statement. */
+  createMany: async (rows: DepotInput[]): Promise<number> => {
+    if (rows.length === 0) return 0;
+    const values: string[] = [];
+    const params: unknown[] = [];
+    rows.forEach((d, i) => {
+      const o = i * 4;
+      values.push(`($${o + 1},$${o + 2},$${o + 3},$${o + 4})`);
+      params.push(d.name, d.address, d.latitude, d.longitude);
+    });
+    const inserted = await query<{ id: string }>(
+      `INSERT INTO depots (name, address, latitude, longitude)
+       VALUES ${values.join(',')} RETURNING id`,
+      params
+    );
+    return inserted.length;
+  },
+
   update: (id: string, d: DepotInput) =>
     queryOne<Depot>(
       `UPDATE depots SET name=$2, address=$3, latitude=$4, longitude=$5
