@@ -12,8 +12,9 @@ services:
       # Applied alphabetically on first init only:
       - ./db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
       - ./db/migrations/002_analysis.sql:/docker-entrypoint-initdb.d/002_analysis.sql:ro
-      - ./db/migrations/003_multidepot.sql:/docker-entrypoint-initdb.d/003_multidepot.sql:ro
-      - ./db/seed.sql:/docker-entrypoint-initdb.d/004_seed.sql:ro
+      - ./db/migrations/003_inventory.sql:/docker-entrypoint-initdb.d/003_inventory.sql:ro
+      - ./db/migrations/004_multidepot.sql:/docker-entrypoint-initdb.d/004_multidepot.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/005_seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vrp} -d ${POSTGRES_DB:-vrp}"]
       interval: 5s
