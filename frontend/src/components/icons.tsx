@@ -87,6 +87,22 @@ export const Icons = {
       <path d="M19 7h-3M19 7v3" />
     </>
   ),
+  planner: svg(
+    <>
+      <path d="M4 7h6M4 12h10M4 17h7" />
+      <circle cx="18" cy="17" r="3" />
+      <path d="M18 14v-3" />
+    </>
+  ),
+  dispatch: svg(
+    <>
+      <path d="M3 6h11v9H3z" />
+      <path d="M14 9h4l3 3v3h-7z" />
+      <circle cx="7.5" cy="17.5" r="1.6" />
+      <circle cx="17.5" cy="17.5" r="1.6" />
+      <path d="M9 4l2 2-2 2" />
+    </>
+  ),
 };
 
 export type IconKey = keyof typeof Icons;

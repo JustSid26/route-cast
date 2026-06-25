@@ -42,6 +42,7 @@ router.get('/routes/:id', asyncHandler(routeController.get));
 router.delete('/routes/:id', asyncHandler(routeController.remove));
 router.post('/routes/:id/baseline', asyncHandler(routeController.uploadBaseline));
 router.post('/optimize', asyncHandler(routeController.optimize));
+router.post('/optimize/dispatch', asyncHandler(routeController.optimizeDispatch));
 
 // Inventory imports (Excel upload → stored whole as JSON)
 router.post('/inventory/import', asyncHandler(inventoryController.import));

@@ -12,6 +12,8 @@ const NAV: { href: string; label: string; icon: IconKey }[] = [
   { href: '/inventory', label: 'Inventory', icon: 'inventory' },
   { href: '/forecast', label: 'Forecast', icon: 'forecast' },
   { href: '/optimize', label: 'Optimize', icon: 'optimize' },
+  { href: '/planner', label: 'Trip Planner', icon: 'planner' },
+  { href: '/dispatch', label: 'Dispatch', icon: 'dispatch' },
   { href: '/map', label: 'Route Map', icon: 'map' },
 ];
 

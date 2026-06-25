@@ -1,5 +1,5 @@
 import { query, queryOne } from '../config/db';
-import { Depot } from '../types';
+import { Depot, DepotStock } from '../types';
 import { DepotInput } from '../validation/schemas';
 
 const COLS =
@@ -14,6 +14,10 @@ export const depotRepository = {
 
   findByIds: (ids: string[]) =>
     query<Depot>(`SELECT ${COLS} FROM depots WHERE id = ANY($1)`, [ids]),
+
+  /** All per-brand stock rows across depots (for stock-aware dispatch). */
+  allStock: () =>
+    query<DepotStock>('SELECT depot_id, brand, category, bottles FROM depot_stock'),
 
   create: (d: DepotInput) =>
     queryOne<Depot>(

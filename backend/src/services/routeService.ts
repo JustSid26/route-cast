@@ -8,8 +8,15 @@ import { solve } from './optimizationService';
 import { computeBaselines, routeCost } from './analysisService';
 import { parseUsualRoute } from './csvService';
 import { AppError } from '../utils/AppError';
-import { Delivery, DeliveryStop, Depot, RouteAnalysis, RouteResult, Vehicle } from '../types';
-import { OptimizeInput } from '../validation/schemas';
+import { haversineMeters } from '../utils/geo';
+import { Delivery, DeliveryStop, Depot, DispatchAssignment, RouteAnalysis, RouteResult, Vehicle } from '../types';
+import { OptimizeInput, DispatchInput } from '../validation/schemas';
+
+// Bold, map-contrasting hues — one per warehouse on the dispatch map.
+const HUB_COLORS = [
+  '#dc2626', '#ea580c', '#9333ea', '#db2777', '#b45309',
+  '#7c3aed', '#be123c', '#a16207', '#c026d3', '#9f1239',
+];
 
 // Route colours chosen to contrast OpenStreetMap basemaps — warm reds, oranges,
 // purples and magentas, which never appear as map fills (greens=parks,
@@ -68,6 +75,108 @@ export const routeService = {
   },
 
   dashboard: () => routeRepository.dashboard(),
+
+  /**
+   * Stock-aware dispatch: assign each client's order to the NEAREST warehouse that
+   * still has enough of the ordered brand (stock depletes as orders are claimed);
+   * fall back to next-nearest, or flag unfulfillable. Then optimize a route per
+   * warehouse by reusing `optimize` (legacy single-depot call). Highest priority
+   * claims stock first.
+   */
+  optimizeDispatch: async (input: DispatchInput) => {
+    const depots = input.depot_ids?.length
+      ? await depotRepository.findByIds(input.depot_ids)
+      : await depotRepository.findAll();
+    if (depots.length === 0) throw AppError.badRequest('No warehouses available for dispatch');
+
+    const deliveries = input.delivery_ids?.length
+      ? await deliveryRepository.findByIds(input.delivery_ids)
+      : await deliveryRepository.findWithOrders();
+    if (deliveries.length === 0) throw AppError.badRequest('No client orders to dispatch');
+
+    // Mutable per-brand stock: depotId → brand → bottles remaining.
+    const stock = new Map<string, Map<string, number>>();
+    for (const s of await depotRepository.allStock()) {
+      if (!stock.has(s.depot_id)) stock.set(s.depot_id, new Map());
+      stock.get(s.depot_id)!.set(s.brand, s.bottles);
+    }
+
+    const groups = new Map<string, string[]>();
+    const addTo = (depotId: string, id: string) => {
+      const arr = groups.get(depotId);
+      if (arr) arr.push(id); else groups.set(depotId, [id]);
+    };
+
+    const ordered = [...deliveries].sort((a, b) => (a.priority - b.priority) || a.id.localeCompare(b.id));
+    const assignments: DispatchAssignment[] = [];
+
+    for (const d of ordered) {
+      const byDist = [...depots].sort((x, y) => haversineMeters(d, x) - haversineMeters(d, y));
+      const nearest = byDist[0] ?? null;
+      const base = {
+        delivery_id: d.id, customer_name: d.customer_name,
+        order_category: d.order_category, order_brand: d.order_brand, order_qty: d.order_qty,
+        nearest_depot_id: nearest?.id ?? null, nearest_depot_name: nearest?.name ?? null,
+      };
+
+      if (!d.order_brand || d.order_qty <= 0) {
+        if (nearest) addTo(nearest.id, d.id);
+        assignments.push({ ...base, assigned_depot_id: nearest?.id ?? null, assigned_depot_name: nearest?.name ?? null, status: 'no_order' });
+        continue;
+      }
+
+      const chosen = byDist.find((dep) => (stock.get(dep.id)?.get(d.order_brand) ?? 0) >= d.order_qty) ?? null;
+      if (chosen) {
+        const m = stock.get(chosen.id)!;
+        m.set(d.order_brand, (m.get(d.order_brand) ?? 0) - d.order_qty);
+        addTo(chosen.id, d.id);
+        const fallback = chosen.id !== nearest?.id;
+        assignments.push({
+          ...base, assigned_depot_id: chosen.id, assigned_depot_name: chosen.name,
+          status: fallback ? 'fallback' : 'nearest',
+          reason: fallback ? `${nearest?.name} was short on ${d.order_brand}` : undefined,
+        });
+      } else {
+        assignments.push({
+          ...base, assigned_depot_id: null, assigned_depot_name: null, status: 'unfulfillable',
+          reason: `No warehouse has ${d.order_qty} × ${d.order_brand} in stock`,
+        });
+      }
+    }
+
+    const plan: { depot: typeof depots[number]; job: Awaited<ReturnType<typeof routeService.getJob>>['job']; results: RouteResult[] }[] = [];
+    let hue = 0;
+    for (const depot of depots) {
+      const assigned = groups.get(depot.id);
+      if (!assigned || assigned.length === 0) continue;
+      try {
+        const detail = await routeService.optimize({
+          objective: input.objective,
+          depot_id: depot.id,
+          vehicle_ids: input.vehicle_ids,
+          delivery_ids: assigned,
+          ignore_capacity: true,
+        });
+        const color = HUB_COLORS[hue++ % HUB_COLORS.length];
+        plan.push({ depot, job: detail.job, results: detail.results.map((r) => ({ ...r, color })) });
+      } catch {
+        // A hub that can't be solved is still reflected in `assignments`; skip its route.
+      }
+    }
+
+    const count = (s: DispatchAssignment['status']) => assignments.filter((a) => a.status === s).length;
+    const summary = {
+      orders: assignments.length,
+      fulfilled: count('nearest') + count('no_order'),
+      fallback: count('fallback'),
+      unfulfillable: count('unfulfillable'),
+      warehouses: plan.length,
+      total_distance: plan.reduce((s, p) => s + p.job.total_distance, 0),
+      total_time: plan.reduce((s, p) => s + p.job.total_time, 0),
+      stop_count: plan.reduce((s, p) => s + p.job.stop_count, 0),
+    };
+    return { plan, assignments, summary, generated_at: new Date().toISOString() };
+  },
 
   /**
    * Replace a completed job's baseline with the manager's actual "usual route".
@@ -203,7 +312,10 @@ export const routeService = {
         distance_matrix: matrix.distances,
         time_matrix: matrix.durations,
         demands: [...depots.map(() => 0), ...deliveries.map((d) => d.weight)],
-        vehicle_capacities: assignments.map((a) => a.vehicle.capacity_kg),
+        // ignore_capacity (Trip Planner): give the solver effectively unlimited
+        // capacity so no stop is dropped; utilisation below still uses real capacity.
+        vehicle_capacities: assignments.map((a) =>
+          input.ignore_capacity ? 1_000_000_000 : a.vehicle.capacity_kg),
         objective: input.objective,
         starts,
         ends: starts,
@@ -232,10 +344,12 @@ export const routeService = {
           // Ordered waypoints (depot → stops → depot) as [lat,lng].
           const waypoints: [number, number][] = [];
           let seq = 1;
+          let prevIdx = depotIndexOf.get(assignment.depot_id)!; // start at home depot
           for (const matrixIndex of route.stops) {
             if (matrixIndex < D) {
               const dp = depots[matrixIndex]; // a depot node (this vehicle's home)
               waypoints.push([dp.latitude, dp.longitude]);
+              prevIdx = matrixIndex;
               continue;
             }
             const d = deliveries[matrixIndex - D];
@@ -247,7 +361,10 @@ export const routeService = {
               longitude: d.longitude,
               weight: d.weight,
               sequence: seq++,
+              leg_distance: Math.round(matrix.distances[prevIdx][matrixIndex]),
+              leg_time: Math.round(matrix.durations[prevIdx][matrixIndex]),
             });
+            prevIdx = matrixIndex;
           }
 
           // Prefer the real road path; fall back to straight waypoint segments.

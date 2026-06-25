@@ -32,6 +32,9 @@ export interface Delivery {
   weight: number;
   volume: number;
   priority: number;
+  order_category?: string;
+  order_brand?: string;
+  order_qty?: number;
   created_at: string;
   updated_at: string;
 }
@@ -83,6 +86,8 @@ export interface DeliveryStop {
   longitude: number;
   weight: number;
   sequence: number;
+  leg_distance?: number; // meters from the previous point
+  leg_time?: number;     // seconds from the previous point
 }
 
 export interface RouteResult {
@@ -169,6 +174,55 @@ export interface VehicleDepotAssignment {
 export interface OptimizeInput {
   objective: Objective;
   // Multi-depot: which vehicle departs from which depot.
-  assignments: VehicleDepotAssignment[];
+  assignments?: VehicleDepotAssignment[];
   delivery_ids?: string[];
+  // Legacy single-depot (still accepted by the backend).
+  depot_id?: string;
+  vehicle_ids?: string[];
+  // Trip Planner: visit all selected stops regardless of capacity.
+  ignore_capacity?: boolean;
+}
+
+// Stock-aware dispatch.
+export interface DispatchAssignment {
+  delivery_id: string;
+  customer_name: string;
+  order_category: string;
+  order_brand: string;
+  order_qty: number;
+  nearest_depot_id: string | null;
+  nearest_depot_name: string | null;
+  assigned_depot_id: string | null;
+  assigned_depot_name: string | null;
+  status: 'nearest' | 'fallback' | 'unfulfillable' | 'no_order';
+  reason?: string;
+}
+
+export interface DispatchRoute {
+  depot: Depot;
+  job: RouteJob;
+  results: RouteResult[];
+}
+
+export interface DispatchPlan {
+  plan: DispatchRoute[];
+  assignments: DispatchAssignment[];
+  summary: {
+    orders: number;
+    fulfilled: number;
+    fallback: number;
+    unfulfillable: number;
+    warehouses: number;
+    total_distance: number;
+    total_time: number;
+    stop_count: number;
+  };
+  generated_at: string;
+}
+
+export interface DispatchInput {
+  objective: Objective;
+  vehicle_ids?: string[];
+  delivery_ids?: string[];
+  depot_ids?: string[];
 }

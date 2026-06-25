@@ -4,6 +4,7 @@ import {
   RouteJob, RouteJobDetail, OptimizeInput, DashboardStats,
   CsvValidation, CsvImportResult, GeoResult,
   InventoryImport, InventoryImportSummary, InventorySheet,
+  DispatchPlan, DispatchInput,
 } from './types';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
@@ -45,6 +46,8 @@ export const api = {
   getRoute: (id: string) => http.get<RouteJobDetail>(`/routes/${id}`).then((r) => r.data),
   deleteRoute: (id: string) => http.delete(`/routes/${id}`).then(() => undefined),
   optimize: (input: OptimizeInput) => http.post<RouteJobDetail>('/optimize', input).then((r) => r.data),
+  optimizeDispatch: (input: DispatchInput) =>
+    http.post<DispatchPlan>('/optimize/dispatch', input).then((r) => r.data),
   uploadBaseline: (jobId: string, csv: string) =>
     http.post<RouteJobDetail>(`/routes/${jobId}/baseline`, { csv }).then((r) => r.data),
 

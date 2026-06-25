@@ -33,8 +33,32 @@ export interface Delivery {
   weight: number;
   volume: number;
   priority: number;
+  order_category: string;
+  order_brand: string;
+  order_qty: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface DepotStock {
+  depot_id: string;
+  brand: string;
+  category: string;
+  bottles: number;
+}
+
+export interface DispatchAssignment {
+  delivery_id: string;
+  customer_name: string;
+  order_category: string;
+  order_brand: string;
+  order_qty: number;
+  nearest_depot_id: string | null;
+  nearest_depot_name: string | null;
+  assigned_depot_id: string | null;
+  assigned_depot_name: string | null;
+  status: 'nearest' | 'fallback' | 'unfulfillable' | 'no_order';
+  reason?: string;
 }
 
 export type RouteStatus = 'pending' | 'running' | 'completed' | 'failed';
@@ -84,6 +108,8 @@ export interface DeliveryStop {
   longitude: number;
   weight: number;
   sequence: number;
+  leg_distance?: number; // meters from the previous point (depot/prior stop)
+  leg_time?: number;     // seconds from the previous point
 }
 
 export interface RouteResult {

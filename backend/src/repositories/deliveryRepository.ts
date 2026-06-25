@@ -4,12 +4,18 @@ import { DeliveryInput } from '../validation/schemas';
 
 const COLS =
   `id, customer_name, address, latitude, longitude, weight, volume,
-   priority, created_at, updated_at`;
+   priority, order_category, order_brand, order_qty, created_at, updated_at`;
 
 export const deliveryRepository = {
   findAll: () =>
     query<Delivery>(
       `SELECT ${COLS} FROM deliveries ORDER BY priority ASC, created_at DESC`
+    ),
+
+  /** Deliveries that carry a product order (used by stock-aware dispatch). */
+  findWithOrders: () =>
+    query<Delivery>(
+      `SELECT ${COLS} FROM deliveries WHERE order_qty > 0 ORDER BY priority ASC, created_at DESC`
     ),
 
   findById: (id: string) =>

@@ -28,6 +28,9 @@ export const deliverySchema = z.object({
   weight: z.number().min(0).default(0),
   volume: z.number().min(0).default(0),
   priority: z.number().int().min(1).max(5).default(3),
+  order_category: z.string().trim().default(''),
+  order_brand: z.string().trim().default(''),
+  order_qty: z.number().int().min(0).default(0),
 });
 
 // Multi-depot: which vehicle departs from which depot. The full set of depots
@@ -47,10 +50,22 @@ export const optimizeSchema = z
     // When `assignments` is absent these build a single-depot assignment.
     depot_id: z.string().uuid('depot_id must be a valid UUID').optional(),
     vehicle_ids: z.array(z.string().uuid()).optional(),
+    // Trip Planner: visit every selected stop in optimal order regardless of
+    // capacity (the truck's real capacity still drives the overload warning).
+    ignore_capacity: z.boolean().default(false),
   })
   .refine((d) => (d.assignments && d.assignments.length > 0) || d.depot_id, {
     message: 'Provide assignments[] (vehicle→depot) or a depot_id',
   });
+
+// Stock-aware dispatch input (all optional → all depots / orders).
+export const dispatchSchema = z.object({
+  objective: z.enum(['distance', 'time']).default('distance'),
+  vehicle_ids: z.array(z.string().uuid()).optional(),
+  delivery_ids: z.array(z.string().uuid()).optional(),
+  depot_ids: z.array(z.string().uuid()).optional(),
+});
+export type DispatchInput = z.infer<typeof dispatchSchema>;
 
 export const csvSchema = z.object({
   csv: z.string().min(1, 'csv content is required'),

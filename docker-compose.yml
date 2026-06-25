@@ -14,7 +14,8 @@ services:
       - ./db/migrations/002_analysis.sql:/docker-entrypoint-initdb.d/002_analysis.sql:ro
       - ./db/migrations/003_inventory.sql:/docker-entrypoint-initdb.d/003_inventory.sql:ro
       - ./db/migrations/004_multidepot.sql:/docker-entrypoint-initdb.d/004_multidepot.sql:ro
-      - ./db/seed.sql:/docker-entrypoint-initdb.d/005_seed.sql:ro
+      - ./db/migrations/005_stock_aware.sql:/docker-entrypoint-initdb.d/005_stock_aware.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/099_seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vrp} -d ${POSTGRES_DB:-vrp}"]
       interval: 5s
@@ -40,7 +41,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-vrp}:${POSTGRES_PASSWORD:-vrp_password}@postgres:5432/${POSTGRES_DB:-vrp}
       OPTIMIZATION_SERVICE_URL: http://optimization-service:8000
       ORS_API_KEY: ${ORS_API_KEY:-}
-      ORS_PROFILE: ${ORS_PROFILE:-driving-car}
+      ORS_PROFILE: ${ORS_PROFILE:-driving-hgv}
       ORS_GEOCODE_COUNTRY: ${ORS_GEOCODE_COUNTRY:-}
       ORS_GEOCODE_RADIUS_KM: ${ORS_GEOCODE_RADIUS_KM:-60}
     ports:
